@@ -69,11 +69,30 @@ try {
   fail(`output directory ${OUT_DIR} is not writable`);
 }
 
+// A PNG is only whole if it ends with its IEND trailer: four zero
+// bytes, the letters IEND, and the fixed CRC ae 42 60 82. A file cut
+// short would still pass the size and dimension checks, so refuse one
+// without its trailer instead of handing in a truncated image.
+if (isPng) {
+  const trailer = image.subarray(image.length - 12);
+  const iend = trailer.equals(Buffer.from([0, 0, 0, 0, 0x49, 0x45, 0x4e, 0x44, 0xae, 0x42, 0x60, 0x82]));
+  if (!iend) {
+    fail("entry.png is truncated: missing the PNG IEND trailer");
+  }
+}
+
 copyFileSync(SOURCE, target);
 
 // Confirm the copy landed whole: the output must be the same size as
 // the source, or the run did not really hand the image in.
 if (statSync(target).size !== image.length) {
   fail(`copied entry.png is incomplete (${statSync(target).size} of ${image.length} bytes)`);
+}
+
+// A size match alone would miss a copy that wrote the right length but
+// the wrong bytes, so read the output back and compare it byte for
+// byte with the source before calling the entry handed in.
+if (!readFileSync(target).equals(image)) {
+  fail("copied entry.png differs from the source");
 }
 console.log(`copied entry.png (${image.length} bytes, 1024x1024) to ${target}`);
